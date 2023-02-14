@@ -4,13 +4,12 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"golang.org/x/crypto/bcrypt"
-	"log"
-	"time"
-
 	"github.com/golang-migrate/migrate/v4"
 	_ "github.com/golang-migrate/migrate/v4/database/postgres"
 	_ "github.com/golang-migrate/migrate/v4/source/file"
+	"github.com/golang-module/carbon/v2"
+	"golang.org/x/crypto/bcrypt"
+	"log"
 )
 
 type PostgreConnect struct {
@@ -317,12 +316,7 @@ func (s PostgreConnect) GetUserOrders(ctx context.Context, userID int) (result [
 			return []Orders{}, err
 		}
 
-		tm, err := time.Parse(time.RFC3339, v.UploadedAt)
-		if err != nil {
-			return []Orders{}, err
-		}
-
-		v.UploadedAt = tm.String()
+		v.UploadedAt = carbon.Parse(v.UploadedAt).ToRfc3339String()
 
 		result = append(result, v)
 	}
@@ -354,12 +348,7 @@ func (s PostgreConnect) GetUserWithdrawals(ctx context.Context, userID int) (res
 			return []Withdrawals{}, err
 		}
 
-		tm, err := time.Parse(time.RFC3339, v.ProcessedAt)
-		if err != nil {
-			return []Withdrawals{}, err
-		}
-
-		v.ProcessedAt = tm.String()
+		v.ProcessedAt = carbon.Parse(v.ProcessedAt).ToRfc3339String()
 
 		result = append(result, v)
 	}
