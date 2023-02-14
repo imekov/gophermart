@@ -1,6 +1,7 @@
 package middlewares
 
 import (
+	"context"
 	"github.com/go-chi/jwtauth"
 	"github.com/lestrrat-go/jwx/jwt"
 	"github.com/vladimirimekov/gophermart/internal/storage"
@@ -32,6 +33,9 @@ func (h UserCookies) CheckUserCookies(next http.Handler) http.Handler {
 			http.Error(w, "user doesn't exist", http.StatusUnauthorized)
 			return
 		}
+
+		ctx := context.WithValue(r.Context(), h.UserKey, int(userID))
+		r = r.WithContext(ctx)
 
 		next.ServeHTTP(w, r)
 	})

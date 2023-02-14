@@ -1,9 +1,13 @@
 package server
 
 import (
+	"context"
 	"database/sql"
+	"fmt"
 	"log"
 	"time"
+
+	"github.com/go-resty/resty/v2"
 
 	"github.com/go-chi/jwtauth"
 	"github.com/vladimirimekov/gophermart/internal/middlewares"
@@ -20,6 +24,12 @@ import (
 type userIDtype string
 
 const userKey userIDtype = "userid"
+
+type Order struct {
+	Order   string  `json:"order"`
+	Status  string  `json:"status"`
+	Accrual float64 `json:"accrual"`
+}
 
 func GetServer(dbConnection *sql.DB) (string, *chi.Mux) {
 
@@ -50,6 +60,37 @@ func GetServer(dbConnection *sql.DB) (string, *chi.Mux) {
 
 	m := middlewares.UserCookies{Storage: h.Storage, UserKey: userKey}
 
+	ctx := context.Background()
+	go func() {
+		restyClient := resty.New()
+		restyClient.SetBaseURL(cfg.AccrualSystemAddress)
+		restyClient.SetHeader("Content-Type", "application/json")
+
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(200 * time.Millisecond):
+				newOrders, err := conn.GetAllNewOrders(ctx)
+				if err != nil {
+					log.Print(err)
+				}
+
+				for _, order := range newOrders {
+					urlGet := fmt.Sprintf("/api/orders/%s", order)
+					order := Order{}
+					restyClient.R().SetResult(&order).Get(urlGet)
+					//TODO: проверить полученный заказ, если статус REGISTERED то пропустить
+					err := conn.UpdateOrderInformation(ctx, order.Order, order.Status, order.Accrual)
+					if err != nil {
+						log.Print(err)
+					}
+
+				}
+			}
+		}
+	}()
+
 	r := chi.NewRouter()
 
 	r.Use(middleware.RequestID)
@@ -60,19 +101,16 @@ func GetServer(dbConnection *sql.DB) (string, *chi.Mux) {
 	r.Use(middlewares.GZIPRead)
 	r.Use(middlewares.GZIPWrite)
 
-	r.Group(func(r chi.Router) {
-		r.Route("/api/user/", func(r chi.Router) {
-			r.Post("/register", h.Register)
-			r.Post("/login", h.Login)
-			r.Get("/logout", h.Logout)
-		})
-	})
+	r.Route("/api/user/", func(r chi.Router) {
 
-	r.Group(func(r chi.Router) {
-		r.Use(jwtauth.Verifier(tokenAuth))
-		r.Use(m.CheckUserCookies)
+		r.Post("/register", h.Register)
+		r.Post("/login", h.Login)
+		r.Get("/logout", h.Logout)
 
-		r.Route("/api/user/", func(r chi.Router) {
+		r.Group(func(r chi.Router) {
+			r.Use(jwtauth.Verifier(tokenAuth))
+			r.Use(m.CheckUserCookies)
+
 			r.Get("/orders", h.GetUserOrders)
 			r.Post("/orders", h.PostUserOrders)
 			r.Get("/withdrawals", h.GetUserWithdrawals)
@@ -83,7 +121,6 @@ func GetServer(dbConnection *sql.DB) (string, *chi.Mux) {
 			})
 
 		})
-
 	})
 
 	return cfg.RunAddress, r
