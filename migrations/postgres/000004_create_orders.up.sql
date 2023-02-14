@@ -1,7 +1,7 @@
 CREATE TABLE IF NOT EXISTS orders
 (
     user_ID INT,
-    order_ID BIGINT UNIQUE,
+    order_id VARCHAR(100) NOT NULL UNIQUE,
     status INT,
     create_date TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
     accrual FLOAT,
