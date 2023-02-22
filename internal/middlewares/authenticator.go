@@ -2,10 +2,12 @@ package middlewares
 
 import (
 	"context"
+	"net/http"
+
+	"github.com/vladimirimekov/gophermart/internal/storage"
+
 	"github.com/go-chi/jwtauth"
 	"github.com/lestrrat-go/jwx/jwt"
-	"github.com/vladimirimekov/gophermart/internal/storage"
-	"net/http"
 )
 
 type UserCookies struct {

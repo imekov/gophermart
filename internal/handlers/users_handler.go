@@ -21,13 +21,6 @@ func (h Handler) userHandle(w http.ResponseWriter, r *http.Request, handleType s
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	defer func(Body io.ReadCloser) {
-		err := Body.Close()
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-	}(r.Body)
 
 	if err = json.Unmarshal(b, &g); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)

@@ -50,13 +50,6 @@ func (h Handler) PostUserOrders(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	defer func(Body io.ReadCloser) {
-		err := Body.Close()
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-	}(r.Body)
 
 	userOrder, err := strconv.Atoi(string(b))
 	if err != nil {
@@ -252,7 +245,7 @@ func (h Handler) GetUserBalance(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	
+
 	_, err = w.Write(resultJSON)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)

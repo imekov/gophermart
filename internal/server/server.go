@@ -15,7 +15,6 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/vladimirimekov/gophermart/internal/config"
 	"github.com/vladimirimekov/gophermart/internal/handlers"
 
 	"github.com/go-chi/chi/v5/middleware"
@@ -31,15 +30,16 @@ type Order struct {
 	Accrual float64 `json:"accrual"`
 }
 
-func GetServer(dbConnection *sql.DB) (string, *chi.Mux) {
+type Server struct {
+	dbConnection *sql.DB
+	repository   *storage.PostgreConnect
+}
 
-	cfg := config.GetConfig()
-	tokenAuth := jwtauth.New("HS256", cfg.Secret, nil)
-
+func ConnectionInitialization(DatabaseURI string) (s Server) {
 	var err error
 
 	for i := 1; i <= 5; i++ {
-		dbConnection, err = sql.Open("postgres", cfg.DatabaseURI)
+		s.dbConnection, err = sql.Open("postgres", DatabaseURI)
 		if err == nil {
 			break
 		}
@@ -47,49 +47,25 @@ func GetServer(dbConnection *sql.DB) (string, *chi.Mux) {
 	}
 
 	if err != nil {
-		log.Fatalf("unable to connect to database %v\n", cfg.DatabaseURI)
+		log.Fatalf("unable to connect to database %v\n", DatabaseURI)
 	}
 
-	conn := storage.GetNewConnection(dbConnection, cfg.DatabaseURI)
+	s.repository = storage.GetNewConnection(s.dbConnection, DatabaseURI)
+
+	return
+}
+
+func (s Server) StartChi(Secret []byte) *chi.Mux {
+
+	tokenAuth := jwtauth.New("HS256", Secret, nil)
 
 	h := handlers.Handler{
-		Storage:   conn,
+		Storage:   s.repository,
 		TokenAuth: tokenAuth,
 		UserKey:   userKey,
 	}
 
 	m := middlewares.UserCookies{Storage: h.Storage, UserKey: userKey}
-
-	ctx := context.Background()
-	go func() {
-		restyClient := resty.New()
-		restyClient.SetBaseURL(cfg.AccrualSystemAddress)
-		restyClient.SetHeader("Content-Type", "application/json")
-
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-time.After(200 * time.Millisecond):
-				newOrders, err := conn.GetAllNewOrders(ctx)
-				if err != nil {
-					log.Print(err)
-				}
-
-				for _, order := range newOrders {
-					urlGet := fmt.Sprintf("/api/orders/%s", order)
-					order := Order{}
-					restyClient.R().SetResult(&order).Get(urlGet)
-					//TODO: проверить полученный заказ, если статус REGISTERED то пропустить
-					err := conn.UpdateOrderInformation(ctx, order.Order, order.Status, order.Accrual)
-					if err != nil {
-						log.Print(err)
-					}
-
-				}
-			}
-		}
-	}()
 
 	r := chi.NewRouter()
 
@@ -123,5 +99,39 @@ func GetServer(dbConnection *sql.DB) (string, *chi.Mux) {
 		})
 	})
 
-	return cfg.RunAddress, r
+	return r
+}
+
+func (s Server) CloseConnection() {
+	s.dbConnection.Close()
+}
+
+func (s Server) ExchangeWithAccrualSystem(AccrualSystemAddress string, ctx context.Context) {
+
+	restyClient := resty.New()
+	restyClient.SetBaseURL(AccrualSystemAddress)
+	restyClient.SetHeader("Content-Type", "application/json")
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(200 * time.Millisecond):
+			newOrders, err := s.repository.GetAllNewOrders(ctx)
+			if err != nil {
+				log.Print(err)
+			}
+
+			for _, order := range newOrders {
+				urlGet := fmt.Sprintf("/api/orders/%s", order)
+				order := Order{}
+				restyClient.R().SetResult(&order).Get(urlGet)
+				err := s.repository.UpdateOrderInformation(ctx, order.Order, order.Status, order.Accrual)
+				if err != nil {
+					log.Print(err)
+				}
+
+			}
+		}
+	}
 }
